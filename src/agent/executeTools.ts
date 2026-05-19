@@ -1,7 +1,8 @@
-import { tools } from "./tools";
+import { tools } from "./tools/index.ts";
+export type Toolname = keyof typeof tools;
 
 export const executeTool = async (name: string, args: any) => {
-  const tool = tools[name as any];
+  const tool = tools[name as Toolname];
 
   if (!tool) {
     return "Unknown tool, this does not exist";
@@ -15,7 +16,7 @@ export const executeTool = async (name: string, args: any) => {
 
   const result = await execute(args, {
     toolCallId: "",
-    messagess: [],
+    messages: [],
   });
 
   return String(result);
