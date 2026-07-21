@@ -1,6 +1,7 @@
 import { generateText, stepCountIs, tool, type ToolSet } from "ai";
 import { openai } from "@ai-sdk/openai";
 import { z } from "zod";
+import type { ModelMessage } from "ai";
 
 import type {
   EvalData,
@@ -8,7 +9,8 @@ import type {
   MultiTurnEvalData,
   MultiTurnResult,
 } from "./types.ts";
-import { buildMessages } from "./utils.ts";
+import { buildMessages, buildMockedTools } from "./utils.ts";
+import { SYSTEM_PROMPT } from "../dist/agent/system/prompt";
 
 // "tools": ["readFile", "writeFile", "listFiles", "deleteFile"]
 
@@ -84,5 +86,54 @@ export const singleTurnExecuter = async (data: EvalData) => {
     toolCalls,
     toolNames,
     selectAny: toolNames.length > 0,
+  };
+};
+
+export const multiTurnWithMocks = async (data: MultiTurnEvalData) => {
+  const tools = buildMockedTools(data.mockTools);
+
+  const messages: ModelMessage[] = data.messages ?? [
+    { role: "system", content: SYSTEM_PROMPT },
+    { role: "user", content: data.prompt! },
+  ];
+
+  const result = await generateText({
+    model: openai(data.config?.model ?? "gpt-5-mini"),
+    messages,
+    tools,
+    stopWhen: stepCountIs(data.config?.maxSteps ?? 20),
+  });
+
+  const allTools: string[] = [];
+
+  const steps = result.steps.map((step) => {
+    const stepToolCalls = (step.toolCalls ?? []).map((tc) => {
+      allTools.push(tc.toolName);
+
+      return {
+        toolName: tc.toolName,
+        args: "args" in tc ? tc.args : {},
+      };
+    });
+
+    const stepToolResults = (step.staticToolResults ?? []).map((tr) => ({
+      toolName: tr.toolName,
+      result: "results" in tr ? tr.results : tr,
+    }));
+
+    return {
+      toolCalls: stepToolCalls?.length > 0 ? stepToolCalls : undefined,
+      stepToolResults: stepToolResults.length > 0 ? stepToolResults : undefined,
+      text: step.text || undefined,
+    };
+  });
+
+  const toolsUsed = [new Set(allTools)];
+
+  return {
+    text: result.text,
+    steps,
+    toolsUsed,
+    toolCallOrder: allTools,
   };
 };
